@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-const API = process.env.API_URL || "http://property-manager-phi-seven.vercel.app";
+const API = process.env.API_URL || "https://zijanproperty.up.railway.app";// || "http://property-manager-phi-seven.vercel.app";
 
 // ================= API HELPER =================
 async function api(path, options = {}) {
