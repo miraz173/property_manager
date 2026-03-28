@@ -97,14 +97,14 @@ app.post("/login", async (req, res) => {
 
 // ================= LOGOUT =================
 app.post("/logout", (req, res) => {
-  response.cookie("token", "", {
+  res.cookie("token", "", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     maxAge: 0,
     path: "/",
   });
-  return response.json({ message: "Logged out successfully" });
+  return res.json({ message: "Logged out successfully" });
 });
 
 // ================= GET CURRENT USER =================
