@@ -13,11 +13,35 @@ const app = express();
 
 app.use(express.json());
 app.use(cookieParser());
+
+//=========== cors origin control ==============
 // app.use(cors({ origin: true, credentials: true }));
-app.use(cors({
-  origin: "https://property-manager-7pdq.vercel.app/",
-  credentials: true
-}));
+// app.use(cors({
+//   origin: "https://property-manager-7pdq.vercel.app",
+//   credentials: true
+// }));
+const allowedOrigins = [
+  "https://property-manager-7pdq.vercel.app",
+  "http://localhost:5173",
+];
+
+if (process.env.FRONTEND_URL) {
+  allowedOrigins.push(process.env.FRONTEND_URL);
+}
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Allow non-browser tools (curl/Postman) and approved frontend origins.
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    credentials: true,
+  })
+);
+//==========
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const pool = new Pool({
