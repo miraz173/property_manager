@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-const API = "http://localhost:8080";
+const API = process.env.API_URL || "http://localhost:8080";
 
 // ================= API HELPER =================
 async function api(path, options = {}) {
