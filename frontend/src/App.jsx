@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-const API = (import.meta.env.VITE_API_URL || "https://zijanproperty.up.railway.app"// || "http://localhost:5000").replace(/\/$/, "");
+const API = (import.meta.env.VITE_API_URL || "https://zijanproperty.up.railway.app").replace(/\/$/, "");// || "http://localhost:5000").replace(/\/$/, "");
 
 // ================= API HELPER =================
 async function api(path, options = {}) {
