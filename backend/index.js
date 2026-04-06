@@ -13,13 +13,6 @@ const app = express();
 
 app.use(express.json());
 app.use(cookieParser());
-
-//=========== cors origin control ==============
-// app.use(cors({ origin: true, credentials: true }));
-// app.use(cors({
-//   origin: "https://property-manager-7pdq.vercel.app",
-//   credentials: true
-// }));
 const allowedOrigins = [
   "https://property-manager-7pdq.vercel.app",
   "http://localhost:5173",
@@ -41,7 +34,6 @@ app.use(
     credentials: true,
   })
 );
-//==========
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const pool = new Pool({
@@ -143,11 +135,17 @@ app.get("/me", authMiddleware, (req, res) => {
 app.get("/properties", authMiddleware, async (req, res) => {
   const { rows } = await pool.query(`
     SELECT p.*
-    FROM properties p
-    ORDER BY is_active DESC, due_date ASC
+    FROM property_info p
+    ORDER BY is_active DESC, updated_at DESC
   `);
   res.json(rows);
 });
+
+const PROPERTY_UPDATABLE_FIELDS = [
+  "property_address",
+  "property_details",
+  "client_name",
+];
 
 // CREATE PROPERTY
 
@@ -155,42 +153,25 @@ app.post("/properties", authMiddleware, async (req, res) => {
   const data = req.body;
 
   const { rows } = await pool.query(
-    `INSERT INTO properties
-     (property_address, property_details, client_name, status, reason_comment, due_date, crew_name, last_email_update)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+    `INSERT INTO property_info
+     (property_address, property_details, client_name)
+     VALUES ($1,$2,$3)
      RETURNING *`,
     [
       data.property_address,
       data.property_details,
       data.client_name,
-      data.status,
-      data.reason_comment,
-      data.due_date || null,
-      data.crew_name,
-      data.last_email_update
     ]
   );
 
   res.json(rows[0]);
 });
 
-// UPDATE PROPERTY + AUDIT LOG
+// UPDATE PROPERTY
 
 app.put("/properties/:id", authMiddleware, async (req, res) => {
   const { id } = req.params;
   const updates = req.body;
-
-  // GET OLD DATA
-  const existing = await pool.query(
-    "SELECT * FROM properties WHERE id=$1",
-    [id]
-  );
-
-  if (!existing.rows.length) {
-    return res.status(404).json({ error: "Property not found" });
-  }
-
-  const oldData = existing.rows[0];
 
   // BUILD DYNAMIC QUERY
   const fields = [];
@@ -198,52 +179,56 @@ app.put("/properties/:id", authMiddleware, async (req, res) => {
   let index = 1;
 
   for (const key in updates) {
+    if (!PROPERTY_UPDATABLE_FIELDS.includes(key)) continue;
     fields.push(`${key}=$${index++}`);
     values.push(updates[key]);
   }
 
+  if (!fields.length) {
+    return res.status(400).json({ error: "No valid fields to update" });
+  }
+
   values.push(id);
 
-  // console.log("Updating property with:", updates);
-  // console.log(
-  //   `UPDATE properties
-  //    SET ${fields.join(", ")}
-  //    WHERE id=$${index}
-  //    RETURNING *`, values
-  // );
-  
   const result = await pool.query(
-    `UPDATE properties
+    `UPDATE property_info
      SET ${fields.join(", ")}
      WHERE id=$${index}
      RETURNING *`,
     values
   );
 
-  // console.log(oldData, updates, result.rows[0]);
-  
-  // ✅ AUDIT LOG ONLY CHANGED FIELDS
-  for (const key in result.rows[0]) {
-    if (key === "updated_at" || key === "created_at") continue; // skip timestamps
-    if (oldData[key] != result.rows[0][key]) {
-      console.log(oldData[key], result.rows[0][key]);
-      
-      await pool.query(
-        `INSERT INTO property_audit_log
-         (property_id, user_id, field_name, old_value, new_value)
-         VALUES ($1,$2,$3,$4,$5)`,
-        [
-          id,
-          req.user.userId,
-          key,
-          oldData[key],
-          result.rows[0][key],
-        ]
-      );
-    }
-  }
-
   res.json(result.rows[0]);
+});
+
+app.delete("/properties/:id", authMiddleware, async (req, res) => {
+  const { id } = req.params;
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const existing = await client.query(
+      "SELECT id FROM property_info WHERE id=$1",
+      [id]
+    );
+
+    if (!existing.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Property not found" });
+    }
+
+    await client.query("DELETE FROM property_info WHERE id=$1", [id]);
+
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("DELETE PROPERTY ERROR:", err);
+    res.status(500).json({ error: "Failed to delete property" });
+  } finally {
+    client.release();
+  }
 });
 
 // ================= URGENT TASKS =================
@@ -252,22 +237,24 @@ app.get("/urgent", authMiddleware, async (req, res) => {
   const { rows } = await pool.query(`
     SELECT u.*, p.property_address, p.property_details
     FROM urgent_tasks u
-    JOIN properties p ON u.property_id = p.id
-    WHERE is_resolved = false
+    JOIN property_info p ON u.property_id = p.id
+    ORDER BY u.due_date ASC NULLS LAST, u.created_at DESC
   `);
 
   res.json(rows);
 });
 
 app.post("/urgent", authMiddleware, async (req, res) => {
+  const client = await pool.connect();
+
   try {
     const {
       property_id,
-      email,
-      additional_info,
-      status1,
-      status2,
+      crew_name,
+      status,
+      reason_comment,
       due_date,
+      last_email_update,
     } = req.body;
 
     // ================= VALIDATION =================
@@ -275,68 +262,79 @@ app.post("/urgent", authMiddleware, async (req, res) => {
       return res.status(400).json({ error: "property_id is required" });
     }
 
+    await client.query("BEGIN");
+
     // Check property exists
-    const propertyCheck = await pool.query(
-      "SELECT id FROM properties WHERE id=$1",
+    const propertyCheck = await client.query(
+      "SELECT id FROM property_info WHERE id=$1",
       [property_id]
     );
 
     if (!propertyCheck.rows.length) {
+      await client.query("ROLLBACK");
       return res.status(404).json({ error: "Property not found" });
     }
 
     // ================= INSERT =================
-    const result = await pool.query(
+    const result = await client.query(
       `INSERT INTO urgent_tasks
-       (property_id, email, additional_info, status1, status2, due_date, is_resolved)
-       VALUES ($1,$2,$3,$4,$5,$6,false)
+       (property_id, crew_name, status, reason_comment, due_date, last_email_update)
+       VALUES ($1,$2,$3,$4,$5,$6)
        RETURNING *`,
       [
         property_id,
-        email || null,
-        additional_info || null,
-        status1 || "Pending",
-        status2 || null,
+        crew_name || null,
+        status || null,
+        reason_comment || null,
         due_date || null,
+        last_email_update || null,
       ]
     );
 
-    const newTask = result.rows[0];
-
-    // ================= OPTIONAL AUDIT LOG =================
-    await pool.query(
-      `INSERT INTO property_audit_log
-       (property_id, user_id, field_name, old_value, new_value)
-       VALUES ($1,$2,$3,$4,$5)`,
-      [
-        property_id,
-        req.user.userId,
-        "urgent_task_created",
-        null,
-        `Task ID: ${newTask.id}`,
-      ]
+    await client.query(
+      `UPDATE property_info
+       SET is_active = COALESCE(is_active, 0) + 1
+       WHERE id=$1`,
+      [property_id]
     );
+
+    await client.query("COMMIT");
 
     // ================= RESPONSE =================
-    res.status(201).json(newTask);
+    res.status(201).json(result.rows[0]);
 
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error("URGENT TASK ERROR:", err);
     res.status(500).json({ error: "Failed to create urgent task" });
+  } finally {
+    client.release();
   }
 });
 
 // UPDATE URGENT TASK
 app.put("/urgent/:id", authMiddleware, async (req, res) => {
   const { id } = req.params;
+  const allowedFields = [
+    "crew_name",
+    "status",
+    "reason_comment",
+    "due_date",
+    "last_email_update",
+  ];
 
   const fields = [];
   const values = [];
   let i = 1;
 
   for (const key in req.body) {
+    if (!allowedFields.includes(key)) continue;
     fields.push(`${key}=$${i++}`);
     values.push(req.body[key]);
+  }
+
+  if (!fields.length) {
+    return res.status(400).json({ error: "No valid fields to update" });
   }
 
   values.push(id);
@@ -348,24 +346,131 @@ app.put("/urgent/:id", authMiddleware, async (req, res) => {
 
   res.json(result.rows[0]);
 });
+
+app.delete("/urgent/:id", authMiddleware, async (req, res) => {
+  const { id } = req.params;
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const taskResult = await client.query(
+      "SELECT property_id FROM urgent_tasks WHERE id=$1",
+      [id]
+    );
+
+    if (!taskResult.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Urgent task not found" });
+    }
+
+    const { property_id: propertyId } = taskResult.rows[0];
+
+    await client.query(
+      "DELETE FROM urgent_tasks WHERE id=$1",
+      [id]
+    );
+
+    await client.query(
+      `UPDATE property_info
+       SET is_active = GREATEST(COALESCE(is_active, 0) - 1, 0)
+       WHERE id=$1`,
+      [propertyId]
+    );
+
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("DELETE URGENT TASK ERROR:", err);
+    res.status(500).json({ error: "Failed to delete urgent task" });
+  } finally {
+    client.release();
+  }
+});
 // ADMIN MARK RESOLVED
 
 app.put("/urgent/:id/resolve", authMiddleware, adminOnly, async (req, res) => {
-  await pool.query(
-    "UPDATE urgent_tasks SET is_resolved=true WHERE id=$1",
-    [req.params.id]
-  );
+  const { id } = req.params;
+  const client = await pool.connect();
 
-  res.json({ success: true });
+  try {
+    await client.query("BEGIN");
+
+    const taskResult = await client.query(
+      "SELECT * FROM urgent_tasks WHERE id=$1",
+      [id]
+    );
+
+    if (!taskResult.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Task not found" });
+    }
+
+    const task = taskResult.rows[0];
+
+    await client.query(
+      `INSERT INTO history_snapshot (
+        urgent_task_id,
+        property_id,
+        crew_name,
+        status,
+        reason_comment,
+        due_date,
+        last_email_update,
+        created_at,
+        updated_at
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        task.id,
+        task.property_id,
+        task.crew_name,
+        task.status,
+        task.reason_comment,
+        task.due_date,
+        task.last_email_update,
+        task.created_at,
+        task.updated_at,
+      ]
+    );
+
+    await client.query("DELETE FROM urgent_tasks WHERE id=$1", [id]);
+
+    await client.query(
+      `UPDATE property_info
+       SET is_active = GREATEST(COALESCE(is_active, 0) - 1, 0)
+       WHERE id=$1`,
+      [task.property_id]
+    );
+
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("RESOLVE URGENT TASK ERROR:", err);
+    res.status(500).json({ error: "Failed to resolve task" });
+  } finally {
+    client.release();
+  }
 });
 
 // ================= HISTORY =================
 
+app.get("/history", authMiddleware, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT *
+     FROM history_snapshot
+     ORDER BY changed_at DESC`
+  );
+
+  res.json(rows);
+});
+
 app.get("/history/:propertyId", authMiddleware, async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT l.*, u.name
-     FROM property_audit_log l
-     LEFT JOIN users u ON l.user_id = u.id
+    `SELECT *
+     FROM history_snapshot
      WHERE property_id=$1
      ORDER BY changed_at DESC`,
     [req.params.propertyId]
