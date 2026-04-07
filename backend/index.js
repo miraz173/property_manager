@@ -127,7 +127,7 @@ app.post("/logout", (req, res) => {
 // ================= GET CURRENT USER =================
 
 app.get("/me", authMiddleware, (req, res) => {
-  res.json(user: req.user);
+  res.json(req.user);
 });
 
 // ================= PROPERTIES =================
