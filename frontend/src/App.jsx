@@ -417,7 +417,7 @@ function AddUrgentModal({ onClose, refresh, properties }) {
           <option value="">Select Property</option>
           {properties.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.property_details}
+              {p.property_address}
             </option>
           ))}
         </select>
