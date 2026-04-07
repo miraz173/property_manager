@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
-const API = (import.meta.env.VITE_API_URL || "https://zijanproperty.up.railway.app").replace(/\/$/, "");// || "http://localhost:5000").replace(/\/$/, "");
+const API = (import.meta.env.VITE_API_URL || "https://zijanproperty.up.railway.app" ||"http://localhost:5000").replace(/\/$/, "");
 
 // ================= API HELPER =================
 async function api(path, options = {}) {
@@ -380,6 +380,82 @@ function AddPropertyModal({ onClose, refresh }) {
   );
 }
 
+function SearchablePropertyDropdown({ properties, value, onChange }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const dropdownRef = useRef(null);
+
+  const filteredProperties = properties.filter((p) =>
+    `${p.id} ${p.property_address}`.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const selectedProperty = properties.find((p) => String(p.id) === String(value));
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [isOpen]);
+
+  return (
+    <div ref={dropdownRef} className="relative w-full">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full rounded-xl border border-rose-200 p-2.5 outline-none ring-rose-200 focus:ring-2 text-left bg-white transition hover:border-rose-300"
+      >
+        {selectedProperty
+          ? `${selectedProperty.id} - ${selectedProperty.property_address}`
+          : "Select Property"}
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 right-0 mt-2 z-50 bg-white border border-rose-200 rounded-xl shadow-lg">
+          <input
+            type="text"
+            placeholder="Search ID or address..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full rounded-t-xl border-b border-rose-200 p-2.5 outline-none focus:ring-2 focus:ring-rose-200"
+            autoFocus
+          />
+          <div className="max-h-64 overflow-y-auto">
+            {filteredProperties.length === 0 ? (
+              <div className="p-3 text-sm text-slate-500">No properties found</div>
+            ) : (
+              filteredProperties.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => {
+                    onChange(p.id);
+                    setIsOpen(false);
+                    setSearchTerm("");
+                  }}
+                  className={`w-full text-left p-3 border-b border-rose-50 transition hover:bg-rose-50 ${
+                    String(p.id) === String(value) ? "bg-rose-100" : ""
+                  }`}
+                >
+                  <div className="font-semibold text-slate-800">{p.id}</div>
+                  <div className="text-sm text-slate-600">{p.property_address}</div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AddUrgentModal({ onClose, refresh, properties }) {
   const [form, setForm] = useState({
     property_id: "",
@@ -408,19 +484,11 @@ function AddUrgentModal({ onClose, refresh, properties }) {
         </h2>
 
         {/* PROPERTY SELECT */}
-        <select
-          className="w-full rounded-xl border border-rose-200 p-2.5 outline-none ring-rose-200 focus:ring-2"
-          onChange={(e) =>
-            setForm({ ...form, property_id: e.target.value })
-          }
-        >
-          <option value="">Select Property</option>
-          {properties.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.property_address}
-            </option>
-          ))}
-        </select>
+        <SearchablePropertyDropdown
+          properties={properties}
+          value={form.property_id}
+          onChange={(id) => setForm({ ...form, property_id: id })}
+        />
 
         <input
           placeholder="Crew Name"
@@ -968,7 +1036,7 @@ async function logout() {
                     <td className="action-cell space-x-2">
                       <button onClick={() => setSelectedPropertyId(p.id)} className="rounded-lg bg-cyan-500 px-3 py-1.5 font-semibold text-white shadow-md shadow-cyan-500/30">History</button>
                       <button onClick={() => setEditing(p)} className="rounded-lg bg-teal-500 px-3 py-1.5 font-semibold text-white shadow-md shadow-teal-500/30">Edit</button>
-                      {(user.role === "admin" || user.role === "coordinator") && (
+                      {(user.role === "admin") && (
                         <button onClick={() => deleteProperty(p.id)} className="rounded-lg bg-rose-600 px-3 py-1.5 font-semibold text-white shadow-md shadow-rose-600/30">Delete</button>
                       )}
                     </td>
@@ -1051,14 +1119,14 @@ async function logout() {
                 <tr>
                   <th className="p-1 w-[4%]">ID</th>
                   <th className="p-1 w-[4%]">Prop ID</th>
-                  <th className="p-1 w-[15%]">Property</th>
+                  <th className="p-1 w-[14%]">Property</th>
                   <th className="p-1 w-[15%]">Details</th>
-                  <th className="p-1 w-[15%]">Email Update</th>
+                  <th className="p-1 w-[14%]">Email Update</th>
                   <th className="p-1 w-[10%]">Reason</th>
-                  <th className="p-1 w-[8%]">Status</th>
+                  <th className="p-1 w-[11%]">Status</th>
                   <th className="p-1 w-[7%]">Crew</th>
                   <th className="p-1 w-[7%]">Due</th>
-                  <th className="p-2 w-[15%]">Action</th>
+                  <th className="p-2 w-[14%]">Action</th>
                 </tr>
               </thead>
               <tbody>
