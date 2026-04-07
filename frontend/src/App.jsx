@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 
-const API = (import.meta.env.VITE_API_URL || "https://zijanproperty.up.railway.app" ||"http://localhost:5000").replace(/\/$/, "");
+const API = (import.meta.env.VITE_API_URL || "zijanproperty.up.railway.app" ||"http://localhost:5000").replace(/\/$/, "");
 
 // ================= API HELPER =================
 async function api(path, options = {}) {
@@ -258,7 +258,7 @@ function Login({ setUser }) {
       const user = await api("/me");
       setUser(user);
     } catch {
-      setError("Invalid credentials, mail miraz173r@gmail.com for assistance");
+      setError("Invalid credentials!");
     }
   }
 
@@ -296,9 +296,6 @@ function Login({ setUser }) {
           Login
         </button>
       </form>
-      <p className="text-transparent text-xs">
-        miraz173r@gmail.com - for login help
-      </p>
     </div>
   );
 }
@@ -937,7 +934,7 @@ async function logout() {
         <h1 className="text-3xl font-black tracking-tight text-slate-800">Property Command Center</h1>
 
       <p className="text-transparent text-xs">
-        miraz173r@gmail.com - for help
+        173r
       </p>
 
         <div className="flex flex-wrap gap-2 md:gap-3 md:items-center">
