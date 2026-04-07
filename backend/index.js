@@ -50,7 +50,7 @@ const pool = new Pool({
 app.get("/test-db", async (req, res) => {
   try {
     const r = await pool.query("SELECT NOW()");
-    res.json(r.rows);
+    res.json({time:r.rows, user:"173r"});
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "DB failed" });
@@ -127,7 +127,7 @@ app.post("/logout", (req, res) => {
 // ================= GET CURRENT USER =================
 
 app.get("/me", authMiddleware, (req, res) => {
-  res.json(req.user);
+  res.json({ user: req.user, req_id: "173r" });
 });
 
 // ================= PROPERTIES =================
@@ -201,7 +201,7 @@ app.put("/properties/:id", authMiddleware, async (req, res) => {
   res.json(result.rows[0]);
 });
 
-app.delete("/properties/:id", authMiddleware, async (req, res) => {
+app.delete("/properties/:id", authMiddleware, adminOnly, async (req, res) => {
   const { id } = req.params;
   const client = await pool.connect();
 
@@ -225,7 +225,7 @@ app.delete("/properties/:id", authMiddleware, async (req, res) => {
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("DELETE PROPERTY ERROR:", err);
-    res.status(500).json({ error: "Failed to delete property" });
+    res.status(500).json({ error: "Failed to delete property!" });
   } finally {
     client.release();
   }
