@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 
-const API = (import.meta.env.VITE_API_URL || "zijanproperty.up.railway.app" ||"http://localhost:5000").replace(/\/$/, "");
-
+const API = (import.meta.env.VITE_API_URL||"https://zijanproperty.up.railway.app").replace(/\/$/, "");
+// ||"http://localhost:5000"
 // ================= API HELPER =================
 async function api(path, options = {}) {
   const res = await fetch(API + path, {
