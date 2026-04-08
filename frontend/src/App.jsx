@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 
-const API = (import.meta.env.VITE_API_URL||"https://zijanproperty.up.railway.app").replace(/\/$/, "");
-// ||"http://localhost:5000"
+const API = (import.meta.env.VITE_API_URL ||"https://zijanproperty.up.railway.app").replace(/\/$/, "");
+//
 // ================= API HELPER =================
 async function api(path, options = {}) {
   const res = await fetch(API + path, {
@@ -459,6 +459,7 @@ function AddUrgentModal({ onClose, refresh, properties }) {
     crew_name: "",
     status: "",
     reason_comment: "",
+    property_details: "",
     due_date: "",
     last_email_update: "",
   });
@@ -485,6 +486,15 @@ function AddUrgentModal({ onClose, refresh, properties }) {
           properties={properties}
           value={form.property_id}
           onChange={(id) => setForm({ ...form, property_id: id })}
+        />
+
+        <input
+          value={form.property_details || ""}
+          placeholder="Details"
+          className="w-full rounded-xl border border-rose-200 p-2.5 outline-none ring-rose-200 focus:ring-2"
+          onChange={(e) =>
+            setForm({ ...form, property_details: e.target.value })
+          }
         />
 
         <input
@@ -600,14 +610,14 @@ function EditModal({ property, onClose, refresh }) {
           className="w-full rounded-xl border border-emerald-200 p-2.5 outline-none ring-emerald-200 focus:ring-2"
         />
 
-        <label className="flex items-center gap-2 text-sm text-slate-700">
+        {/* <label className="flex items-center gap-2 text-sm text-slate-700">
           <input
             type="checkbox"
             checked={Number(form.is_active) > 0}
             readOnly
           />
           Active is auto-calculated from urgent task count ({Number(form.is_active) || 0})
-        </label>
+        </label> */}
 
         <div className="flex gap-2 pt-2">
           <button
@@ -639,6 +649,7 @@ function EditUrgentModal({ task, onClose, refresh }) {
       reason_comment: form.reason_comment || null,
       due_date: form.due_date || null,
       last_email_update: form.last_email_update || null,
+      property_details: form.property_details || null,
     };
 
     await api(`/urgent/${task.id}`, {
@@ -656,6 +667,13 @@ function EditUrgentModal({ task, onClose, refresh }) {
         <h2 className="text-xl font-extrabold tracking-tight text-slate-800">
           Edit Immediate Task
         </h2>
+
+        <input
+          value={form.property_details || ""}
+          placeholder="Details"
+          onChange={(e) => setForm({ ...form, property_details: e.target.value })}
+          className="w-full rounded-xl border border-indigo-200 p-2.5 outline-none ring-indigo-200 focus:ring-2"
+        />
 
         <input
           value={form.crew_name || ""}
