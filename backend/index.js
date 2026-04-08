@@ -253,6 +253,7 @@ app.post("/urgent", authMiddleware, async (req, res) => {
       crew_name,
       status,
       reason_comment,
+      property_details,
       due_date,
       last_email_update,
     } = req.body;
@@ -291,6 +292,15 @@ app.post("/urgent", authMiddleware, async (req, res) => {
       ]
     );
 
+    if (Object.prototype.hasOwnProperty.call(req.body, "property_details")) {
+      await client.query(
+        `UPDATE property_info
+         SET property_details=$1
+         WHERE id=$2`,
+        [property_details, property_id]
+      );
+    }
+
     await client.query(
       `UPDATE property_info
        SET is_active = COALESCE(is_active, 0) + 1
@@ -315,36 +325,67 @@ app.post("/urgent", authMiddleware, async (req, res) => {
 // UPDATE URGENT TASK
 app.put("/urgent/:id", authMiddleware, async (req, res) => {
   const { id } = req.params;
-  const allowedFields = [
-    "crew_name",
-    "status",
-    "reason_comment",
-    "due_date",
-    "last_email_update",
-  ];
+  const client = await pool.connect();
+  const allowedFields = ["crew_name", "status", "reason_comment", "due_date", "last_email_update"];
 
-  const fields = [];
-  const values = [];
-  let i = 1;
+  try {
+    await client.query("BEGIN");
 
-  for (const key in req.body) {
-    if (!allowedFields.includes(key)) continue;
-    fields.push(`${key}=$${i++}`);
-    values.push(req.body[key]);
+    const taskCheck = await client.query(
+      "SELECT id, property_id FROM urgent_tasks WHERE id=$1",
+      [id]
+    );
+
+    if (!taskCheck.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Urgent task not found" });
+    }
+
+    const fields = [];
+    const values = [];
+    let i = 1;
+
+    for (const key in req.body) {
+      if (!allowedFields.includes(key)) continue;
+      fields.push(`${key}=$${i++}`);
+      values.push(req.body[key]);
+    }
+
+    let updatedTask = null;
+
+    if (fields.length) {
+      values.push(id);
+      const result = await client.query(
+        `UPDATE urgent_tasks SET ${fields.join(", ")} WHERE id=$${i} RETURNING *`,
+        values
+      );
+      updatedTask = result.rows[0];
+    } else {
+      const existingTask = await client.query(
+        "SELECT * FROM urgent_tasks WHERE id=$1",
+        [id]
+      );
+      updatedTask = existingTask.rows[0];
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "property_details")) {
+      await client.query(
+        `UPDATE property_info
+         SET property_details=$1
+         WHERE id=$2`,
+        [req.body.property_details, taskCheck.rows[0].property_id]
+      );
+    }
+
+    await client.query("COMMIT");
+    res.json(updatedTask);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("UPDATE URGENT TASK ERROR:", err);
+    res.status(500).json({ error: "Failed to update urgent task" });
+  } finally {
+    client.release();
   }
-
-  if (!fields.length) {
-    return res.status(400).json({ error: "No valid fields to update" });
-  }
-
-  values.push(id);
-
-  const result = await pool.query(
-    `UPDATE urgent_tasks SET ${fields.join(", ")} WHERE id=$${i} RETURNING *`,
-    values
-  );
-
-  res.json(result.rows[0]);
 });
 
 app.delete("/urgent/:id", authMiddleware, async (req, res) => {
